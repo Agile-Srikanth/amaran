@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.pyo
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.production
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Audio files (don't commit test data)
+uploads/
+output/
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# ML model files (too large for git)
+ml-model/saved_models/
+ml-model/data/
+ml-model/models/tfjs_model/
+*.h5
+*.pb
+*.tflite
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+.vercel/
+coverage/
