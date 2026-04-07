@@ -133,7 +133,8 @@ def detect_emotion(audio_path: str) -> dict:
     """
     import librosa
 
-    y, sr = librosa.load(audio_path, sr=22050, mono=True)
+    # Use 16kHz to reduce computation on limited-CPU servers (Render free tier)
+    y, sr = librosa.load(audio_path, sr=16000, mono=True)
 
     if len(y) == 0 or np.max(np.abs(y)) < 1e-6:
         return {
@@ -151,11 +152,43 @@ def detect_emotion(audio_path: str) -> dict:
 
     # ─── Feature extraction ───────────────────────────────────────────────
 
-    # Pitch (fundamental frequency)
-    f0, voiced_flag, _ = librosa.pyin(
-        y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'), sr=sr
-    )
-    f0_clean = f0[~np.isnan(f0)] if f0 is not None else np.array([0.0])
+    # Pitch estimation using spectral autocorrelation (much faster than pyin)
+    # pyin takes 30-60s on Render free tier; this takes <1s
+    def fast_pitch_estimate(y, sr, frame_length=2048, hop_length=512):
+        """Estimate pitch using autocorrelation - 10-50x faster than pyin."""
+        pitches = []
+        voiced = []
+        fmin, fmax = 80, 600
+        min_lag = int(sr / fmax)
+        max_lag = int(sr / fmin)
+
+        for start in range(0, len(y) - frame_length, hop_length):
+            frame = y[start:start + frame_length]
+            # Autocorrelation
+            corr = np.correlate(frame, frame, mode='full')
+            corr = corr[len(corr) // 2:]  # keep positive lags only
+            # Normalize
+            if corr[0] > 0:
+                corr = corr / corr[0]
+            # Search for peak in valid pitch range
+            if max_lag < len(corr):
+                search = corr[min_lag:max_lag]
+                if len(search) > 0:
+                    peak_idx = np.argmax(search)
+                    peak_val = search[peak_idx]
+                    if peak_val > 0.3:  # voiced threshold
+                        lag = min_lag + peak_idx
+                        pitches.append(sr / lag)
+                        voiced.append(True)
+                    else:
+                        voiced.append(False)
+                else:
+                    voiced.append(False)
+            else:
+                voiced.append(False)
+        return np.array(pitches), np.array(voiced)
+
+    f0_clean, voiced_flag = fast_pitch_estimate(y, sr)
     if len(f0_clean) == 0:
         f0_clean = np.array([0.0])
 
@@ -205,7 +238,7 @@ def detect_emotion(audio_path: str) -> dict:
     # Voiced ratio
     voiced_ratio = float(
         np.sum(voiced_flag) / (len(voiced_flag) + 1e-10)
-    ) if voiced_flag is not None else 0.0
+    ) if len(voiced_flag) > 0 else 0.0
 
     # Onset regularity (rhythmic = crying)
     onsets = librosa.onset.onset_detect(y=y, sr=sr, onset_envelope=onset_env)

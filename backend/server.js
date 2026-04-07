@@ -13,6 +13,8 @@ const logger = require('./utils/logger');
 const constants = require('./config/constants');
 
 const app = express();
+// Trust proxy headers (required for Render/Vercel reverse proxy - fixes express-rate-limit ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const ALLOWED_ORIGINS = [FRONTEND_URL, 'http://localhost:3000'];

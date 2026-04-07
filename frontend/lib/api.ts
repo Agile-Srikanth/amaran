@@ -26,10 +26,25 @@ export async function processAudio(file: File): Promise<ProcessingResult> {
   const formData = new FormData();
   formData.append('audio', file);
 
-  const response = await fetch(`${API_URL}/api/process-audio`, {
-    method: 'POST',
-    body: formData,
-  });
+  // Use AbortController with 3-minute timeout for slow free-tier servers
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/process-audio`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Processing timed out. The server may be waking up from sleep — please try again in a moment.');
+    }
+    throw new Error('Could not reach the server. It may be starting up — please wait 30 seconds and try again.');
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Processing failed' }));

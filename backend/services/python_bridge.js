@@ -22,7 +22,7 @@ function detectPython() {
 }
 
 const PYTHON_PATH = detectPython();
-const TIMEOUT = 60000; // 60 seconds (increased from 30s for audio processing)
+const TIMEOUT = 180000; // 180 seconds (3 min for slow free-tier servers)
 
 /**
  * Execute a Python script and return parsed JSON output
@@ -125,7 +125,7 @@ async function processAudio(inputPath, outputDir) {
 
     console.log(`[processAudio] Input: ${inputPath}, Output: ${outputDir}`);
 
-    const result = await executePythonScript(scriptPath, [inputPath, outputDir], 120000);
+    const result = await executePythonScript(scriptPath, [inputPath, outputDir], 180000);
 
     if (!result.success) {
       throw new Error(result.error || 'Audio processing failed');

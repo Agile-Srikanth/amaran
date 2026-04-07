@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Tuple, Dict
 from scipy.special import i0 as besseli0, i1 as besseli1
+from scipy.signal import lfilter
 import json
 
 # Configure logging to stderr (not stdout) to avoid corrupting JSON output
@@ -80,8 +81,10 @@ class AudioProcessor:
 
         logger.info(f"Loading audio from {input_path}")
 
-        # Load audio (preserving original sample rate)
-        y, fs = librosa.load(input_path, sr=None, mono=True)
+        # Load audio at 16kHz to reduce processing time on limited-CPU servers
+        # Original sr=None was too slow on Render free tier (44.1kHz = ~3x more work)
+        TARGET_SR = 16000
+        y, fs = librosa.load(input_path, sr=TARGET_SR, mono=True)
         logger.info(f"Loaded: {len(y)} samples at {fs} Hz ({len(y)/fs:.2f}s)")
 
         # Normalize to [-1, 1]
@@ -339,9 +342,9 @@ class AudioProcessor:
         # De-emphasis filter: y[n] = x[n] + alpha * y[n-1]
         # Inverts the pre-emphasis applied during preprocessing
         # (matches MATLAB: filter(1, [1, -alpha], reconstructed_signal))
+        # Using scipy.signal.lfilter for vectorized speed (avoids slow Python loop)
         alpha = self.pre_emphasis_alpha
-        for i in range(1, len(reconstructed)):
-            reconstructed[i] = reconstructed[i] + alpha * reconstructed[i - 1]
+        reconstructed = lfilter([1], [1, -alpha], reconstructed)
 
         # Peak-normalize to [-1, 1] (matches MATLAB: / max(abs()))
         max_val = np.max(np.abs(reconstructed))
@@ -382,18 +385,18 @@ class AudioProcessor:
         """Generate waveform visualization PNG with dark theme."""
         try:
             logger.info(f"Generating waveform: {title}")
-            plt.figure(figsize=(12, 4), dpi=150)
+            plt.figure(figsize=(10, 3), dpi=100)
 
             time_axis = np.arange(len(signal_data)) / sr
             plt.plot(time_axis, signal_data, color=color, linewidth=0.5, alpha=0.8)
 
-            plt.xlabel('Time (s)', fontsize=12, color='#FFFFFF')
-            plt.ylabel('Amplitude', fontsize=12, color='#FFFFFF')
-            plt.title(title, fontsize=14, color='#FFFFFF', pad=20)
+            plt.xlabel('Time (s)', fontsize=10, color='#FFFFFF')
+            plt.ylabel('Amplitude', fontsize=10, color='#FFFFFF')
+            plt.title(title, fontsize=12, color='#FFFFFF', pad=15)
             plt.grid(True, alpha=0.2, color='#333333')
             plt.tight_layout()
 
-            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=150)
+            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=100)
             plt.close()
             logger.info(f"Waveform saved: {output_path}")
 
@@ -415,7 +418,7 @@ class AudioProcessor:
         """
         try:
             logger.info(f"Generating spectrogram: {title}")
-            plt.figure(figsize=(12, 5), dpi=150)
+            plt.figure(figsize=(10, 4), dpi=100)
 
             num_bins, num_frames = mag_spec.shape
             magnitude_db = 20 * np.log10(mag_spec + 1e-10)
@@ -441,7 +444,7 @@ class AudioProcessor:
             plt.ylim(0, min(8000, fs / 2))
             plt.tight_layout()
 
-            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=150)
+            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=100)
             plt.close()
             logger.info(f"Spectrogram saved: {output_path}")
 
