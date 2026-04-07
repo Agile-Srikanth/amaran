@@ -161,7 +161,7 @@ async function detectEmotion(audioPath) {
 
     console.log(`[detectEmotion] Processing: ${audioPath}`);
 
-    const result = await executePythonScript(scriptPath, [audioPath], 60000);
+    const result = await executePythonScript(scriptPath, [audioPath], 180000);
 
     if (!result.success) {
       throw new Error(result.error || 'Emotion detection failed');
