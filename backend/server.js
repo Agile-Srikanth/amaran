@@ -19,6 +19,10 @@ const ALLOWED_ORIGINS = [FRONTEND_URL, 'http://localhost:3000'];
 if (process.env.VERCEL_URL) {
   ALLOWED_ORIGINS.push(`https://${process.env.VERCEL_URL}`);
 }
+// Allow all Vercel preview/production URLs
+if (process.env.VERCEL_PROJECT_URL) {
+  ALLOWED_ORIGINS.push(`https://${process.env.VERCEL_PROJECT_URL}`);
+}
 
 // Create required directories
 const UPLOAD_DIR = constants.DIRECTORIES.UPLOADS;
