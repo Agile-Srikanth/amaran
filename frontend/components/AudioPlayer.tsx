@@ -99,7 +99,10 @@ export const AudioPlayer = ({ src, label, color = '#C8A96A' }: AudioPlayerProps)
         }
 
         // Normalize to [0, 1]
-        const max = Math.max(...downsampled, 0.001);
+        let max = 0.001;
+        for (let i = 0; i < downsampled.length; i++) {
+          if (downsampled[i] > max) max = downsampled[i];
+        }
         for (let i = 0; i < samples; i++) {
           downsampled[i] /= max;
         }
