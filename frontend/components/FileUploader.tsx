@@ -43,7 +43,7 @@ export const FileUploader = ({ onFileSelected, disabled = false }: FileUploaderP
     [onFileSelected]
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps: _getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'audio/*': ['.mp3', '.wav', '.ogg', '.flac', '.m4a'],
@@ -52,6 +52,9 @@ export const FileUploader = ({ onFileSelected, disabled = false }: FileUploaderP
     disabled,
     multiple: false,
   });
+
+  // Destructure out onAnimationStart and onDrag to avoid type conflicts with Framer Motion
+  const { onAnimationStart: _onAnimationStart, onDrag: _onDrag, ...rootProps } = _getRootProps();
 
   const currentState = isDragActive ? 'hover' : state;
 
@@ -63,7 +66,7 @@ export const FileUploader = ({ onFileSelected, disabled = false }: FileUploaderP
       className="w-full"
     >
       <motion.div
-        {...getRootProps()}
+        {...rootProps}
         whileHover={{ scale: 1.02, borderColor: 'rgba(200, 169, 106, 0.6)' }}
         whileTap={{ scale: 0.99 }}
         className={`
