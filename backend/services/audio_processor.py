@@ -50,14 +50,15 @@ class AudioProcessor:
     Ports the MATLAB MMSE-STSA Ephraim-Malah noise reduction pipeline.
     """
 
-    def __init__(self, frame_len_ms: float = 25, step_ms: float = 10):
+    def __init__(self, frame_len_ms: float = 25, step_ms: float = 20):
         """
         Args:
             frame_len_ms: Frame length in milliseconds (default 25)
-            step_ms: Frame step / hop length in milliseconds (default 10)
+            step_ms: Frame step / hop length in milliseconds (default 20, was 10 - doubled for speed)
         """
         self.frame_len_ms = frame_len_ms
         self.step_ms = step_ms
+        self.max_duration = 30  # Cap audio at 30 seconds for free-tier servers
         self.pre_emphasis_alpha = 0.97  # Matches MATLAB exactly
 
         logger.info(
@@ -84,8 +85,14 @@ class AudioProcessor:
         # Load audio at 16kHz to reduce processing time on limited-CPU servers
         # Original sr=None was too slow on Render free tier (44.1kHz = ~3x more work)
         TARGET_SR = 16000
-        y, fs = librosa.load(input_path, sr=TARGET_SR, mono=True)
+        y, fs = librosa.load(input_path, sr=TARGET_SR, mono=True, duration=self.max_duration)
         logger.info(f"Loaded: {len(y)} samples at {fs} Hz ({len(y)/fs:.2f}s)")
+
+        # Truncate to max_duration seconds if somehow longer
+        max_samples = int(self.max_duration * fs)
+        if len(y) > max_samples:
+            y = y[:max_samples]
+            logger.info(f"Truncated to {self.max_duration}s ({max_samples} samples)")
 
         # Normalize to [-1, 1]
         max_val = np.max(np.abs(y))
@@ -133,11 +140,9 @@ class AudioProcessor:
         n = np.arange(frame_length)
         win = 0.54 - 0.46 * np.cos(2 * np.pi * n / frame_length)
 
-        # Extract and window frames
-        frames = np.zeros((frame_length, num_frames))
-        for i in range(num_frames):
-            start = i * hop_length
-            frames[:, i] = signal_padded[start:start + frame_length] * win
+        # Extract and window frames (vectorized with stride_tricks for speed)
+        indices = np.arange(frame_length)[:, None] + np.arange(num_frames)[None, :] * hop_length
+        frames = signal_padded[indices] * win[:, None]
 
         logger.info(
             f"Framing: {num_frames} frames, frame_len={frame_length} samples, "
@@ -331,9 +336,8 @@ class AudioProcessor:
 
         for i in range(num_frames):
             start = i * hop_length
-            end = start + frame_length
-            reconstructed[start:end] += ifft_frames[:, i]
-            window_sum[start:end] += win
+            reconstructed[start:start + frame_length] += ifft_frames[:, i]
+            window_sum[start:start + frame_length] += win
 
         # Normalize by window sum to remove OLA amplitude modulation
         window_sum[window_sum < 1e-6] = 1.0
@@ -385,7 +389,7 @@ class AudioProcessor:
         """Generate waveform visualization PNG with dark theme."""
         try:
             logger.info(f"Generating waveform: {title}")
-            plt.figure(figsize=(10, 3), dpi=100)
+            plt.figure(figsize=(10, 3), dpi=72)
 
             time_axis = np.arange(len(signal_data)) / sr
             plt.plot(time_axis, signal_data, color=color, linewidth=0.5, alpha=0.8)
@@ -396,7 +400,7 @@ class AudioProcessor:
             plt.grid(True, alpha=0.2, color='#333333')
             plt.tight_layout()
 
-            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=100)
+            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=72)
             plt.close()
             logger.info(f"Waveform saved: {output_path}")
 
@@ -448,6 +452,43 @@ class AudioProcessor:
             plt.close()
             logger.info(f"Spectrogram saved: {output_path}")
 
+        except Exception as e:
+            logger.error(f"Error generating spectrogram: {e}")
+            plt.close('all')
+            raise
+
+    def generate_spectrogram_fast(
+        self,
+        mag_spec: np.ndarray,
+        fs: int,
+        title: str,
+        output_path: str
+    ) -> None:
+        """Fast spectrogram using imshow instead of slow pcolormesh."""
+        try:
+            logger.info(f"Generating fast spectrogram: {title}")
+            plt.figure(figsize=(10, 3), dpi=72)
+
+            magnitude_db = 20 * np.log10(mag_spec + 1e-10)
+
+            # imshow is MUCH faster than pcolormesh
+            plt.imshow(
+                magnitude_db,
+                aspect='auto',
+                origin='lower',
+                cmap='jet',
+                extent=[0, mag_spec.shape[1], 0, fs / 2]
+            )
+
+            plt.ylabel('Frequency (Hz)', fontsize=10, color='#FFFFFF')
+            plt.xlabel('Frame', fontsize=10, color='#FFFFFF')
+            plt.title(title, fontsize=11, color='#FFFFFF', pad=10)
+            plt.ylim(0, min(8000, fs / 2))
+            plt.tight_layout()
+
+            plt.savefig(output_path, facecolor='#0B0B0B', edgecolor='none', dpi=72)
+            plt.close()
+            logger.info(f"Spectrogram saved: {output_path}")
         except Exception as e:
             logger.error(f"Error generating spectrogram: {e}")
             plt.close('all')
@@ -518,7 +559,7 @@ class AudioProcessor:
             sf.write(audio_output_path, clean_signal, fs)
             logger.info(f"Cleaned audio saved: {audio_output_path}")
 
-            # Generate visualizations
+            # Generate visualizations (only waveforms — spectrograms are too slow for free tier)
             logger.info("Step 6: Generating visualizations...")
 
             # Waveform plots (use original signal, not pre-emphasized)
@@ -535,14 +576,13 @@ class AudioProcessor:
                 color='#4CCD89'
             )
 
-            # Spectrogram plots — use the STFT magnitude spectra directly
-            # (matches MATLAB: imagesc of the mag_spec matrices)
-            self.generate_spectrogram_plot(
+            # Generate simple spectrograms using fast imshow instead of pcolormesh
+            self.generate_spectrogram_fast(
                 mag_spec, fs,
                 f"Original Noisy Spectrogram - {base_name}",
                 spec_orig_path
             )
-            self.generate_spectrogram_plot(
+            self.generate_spectrogram_fast(
                 clean_mag_spec, fs,
                 f"Processed Clean Spectrogram - {base_name}",
                 spec_clean_path
@@ -587,7 +627,7 @@ class AudioProcessor:
 
 
 if __name__ == '__main__':
-    processor = AudioProcessor(frame_len_ms=25, step_ms=10)
+    processor = AudioProcessor(frame_len_ms=25, step_ms=20)
     test_input = "/path/to/audio/file.wav"
     test_output_dir = "/path/to/output"
     if os.path.exists(test_input):

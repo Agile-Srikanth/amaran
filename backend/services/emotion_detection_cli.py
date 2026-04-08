@@ -133,8 +133,8 @@ def detect_emotion(audio_path: str) -> dict:
     """
     import librosa
 
-    # Use 16kHz to reduce computation on limited-CPU servers (Render free tier)
-    y, sr = librosa.load(audio_path, sr=16000, mono=True)
+    # Use 16kHz and cap at 30s to reduce computation on limited-CPU servers (Render free tier)
+    y, sr = librosa.load(audio_path, sr=16000, mono=True, duration=30)
 
     if len(y) == 0 or np.max(np.abs(y)) < 1e-6:
         return {
